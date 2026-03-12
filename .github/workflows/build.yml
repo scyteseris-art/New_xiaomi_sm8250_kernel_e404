@@ -1,0 +1,65 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git curl wget zip unzip \
+            bc bison flex libssl-dev \
+            libelf-dev python3 python2 \
+            make gcc binutils
+
+      - name: Download Clang toolchain
+        run: |
+          mkdir -p $HOME/clang
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250101-release/Clang-20.0.0git-20250101.tar.gz -O clang.tar.gz
+          tar -xf clang.tar.gz -C $HOME/clang
+
+      - name: Download GCC toolchains
+        run: |
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 $HOME/gcc64
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 $HOME/gcc32
+
+      - name: Build kernel
+        run: |
+          export PATH="$HOME/clang/bin:$HOME/gcc64/bin:$HOME/gcc32/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+
+          make O=out ARCH=arm64 defconfig
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC=clang \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu-
+
+      - name: Upload kernel image
+        uses: actions/upload-artifact@v3
+        with:
+          name: kernel-Image
+          path: out/arch/arm64/boot/Image
+          if-no-files-found: warn
+
+      - name: Upload dtbo
+        uses: actions/upload-artifact@v3
+        with:
+          name: kernel-dtbo
+          path: out/arch/arm64/boot/dtbo.img
+          if-no-files-found: warn
